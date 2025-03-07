@@ -1,10 +1,9 @@
-# main.tf
-
+# Provider
 provider "aws" {
-  region = "us-east-1"  # Specify the region
+  region = "us-east-1"  # Specify the AWS region
 }
 
-# 1. Create a VPC
+# 1. VPC Creation
 resource "aws_vpc" "my_vpc" {
   cidr_block = "10.0.0.0/16"
   enable_dns_support = true
@@ -14,34 +13,66 @@ resource "aws_vpc" "my_vpc" {
   }
 }
 
-# 2. Create a subnet in the VPC
+# 2. Subnet Creation
 resource "aws_subnet" "my_subnet" {
-  vpc_id                  = "vpc-0a9a37e9c7018782c"
+  vpc_id                  = aws_vpc.my_vpc.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-east-1a"  # Change availability zone if needed
+  availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
   tags = {
     Name = "my_subnet"
   }
 }
 
-# 3. Create an Internet Gateway (for internet access)
-resource "aws_internet_gateway" "my_gateway" {
-  vpc_id = "vpc-0a9a37e9c7018782c"
+# 3. Route Table Creation
+resource "aws_route_table" "my_route_table" {
+  vpc_id = aws_vpc.my_vpc.id
+
   tags = {
-    Name = "my_gateway"
+    Name = "my_route_table"
   }
 }
 
-# 4. Create a security group to allow SSH access to EC2 instance
+# 4. Internet Gateway (IGW) Creation
+resource "aws_internet_gateway" "my_igw" {
+  vpc_id = aws_vpc.my_vpc.id
+
+  tags = {
+    Name = "my_igw"
+  }
+}
+
+# 5. Route to Internet via IGW
+resource "aws_route" "my_route" {
+  route_table_id         = aws_route_table.my_route_table.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.my_igw.id
+}
+
+# 6. Associate Route Table with Subnet
+resource "aws_route_table_association" "my_subnet_route_table_assoc" {
+  subnet_id      = aws_subnet.my_subnet.id
+  route_table_id = aws_route_table.my_route_table.id
+}
+
+# 7. Security Group (allowing SSH and HTTP access)
 resource "aws_security_group" "my_security_group" {
-  vpc_id = "vpc-0a9a37e9c7018782c"
+  name        = "my_security_group"
+  description = "Allow inbound SSH and HTTP traffic"
+  vpc_id      = aws_vpc.my_vpc.id
 
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Allow SSH from anywhere (use with caution)
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -50,35 +81,18 @@ resource "aws_security_group" "my_security_group" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = {
-    Name = "my_security_group"
-  }
 }
 
-# 5. Create an EC2 instance
+# 8. EC2 Instance Creation
 resource "aws_instance" "my_ec2" {
-  ami                    = "ami-05b10e08d247fb927"  # Replace with a valid AMI ID (e.g., Amazon Linux 2)
-  instance_type           = "t2.micro"               # Choose your instance type
-  subnet_id               = "subnet-0d81c2a0cc02b25d3"
-  security_groups         = "sg-0cd19b0186165fd6e"
-  associate_public_ip_address = true
-  key_name                = "your-key-name"  # Replace with your key pair name for SSH access
+  ami           = "ami-0f37c4a1ba152af46"   # Your specified AMI ID
+  instance_type = "t2.micro"
+  subnet_id     = aws_subnet.my_subnet.id
+  security_groups = [aws_security_group.my_security_group.name]
 
   tags = {
     Name = "my_ec2_instance"
   }
-
-  # Optional: Add an EBS volume (e.g., for storage)
-  root_block_device {
-    volume_size = 8  # Size in GB
-    volume_type = "gp2"
-    delete_on_termination = true
-  }
 }
 
-# 6. Create an output for the EC2 instance public IP
-output "ec2_public_ip" {
-  value = aws_instance.my_ec2.public_ip
-}
 
